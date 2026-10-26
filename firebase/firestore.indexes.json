@@ -1,0 +1,23 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "appointments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hospitalId", "order": "ASCENDING" },
+        { "fieldPath": "doctorId", "order": "ASCENDING" },
+        { "fieldPath": "appointmentDate", "order": "ASCENDING" },
+        { "fieldPath": "tokenNumber", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "appointments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "patientId", "order": "ASCENDING" },
+        { "fieldPath": "appointmentDate", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

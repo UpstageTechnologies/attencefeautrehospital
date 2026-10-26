@@ -1,0 +1,702 @@
+rules_version = '2';
+
+// ===============================================================
+// Upstage Health & RIO Scans and Labs (Tirunelveli)
+// Cloud Firestore Production Security Rules
+// ===============================================================
+//
+// Assumed Data Models:
+//
+// 1. Collection: /users/{userId}
+//    Document ID: Firebase Auth UID or Custom Staff UID (e.g. usr_owner_1, RIO-DOC-02)
+//    Fields:
+//      - id: string (required, 1-128 chars) - user/auth identifier
+//      - email: string (required, valid email, <= 100 chars)
+//      - name: string (required, 1-100 chars)
+//      - phone: string (required, 5-25 chars)
+//      - role: string (required, enum: owner | doctor | receptionist | patient | staff | delivery)
+//      - createdAt: string (required, ISO date string, <= 50 chars, immutable on update)
+//      - hospitalId: string (optional, <= 100 chars)
+//      - avatarUrl: string (optional, <= 1000 chars)
+//      - staffId: string (optional, <= 50 chars)
+//      - department: string (optional, <= 100 chars)
+//      - floor: number (optional, 1-10)
+//      - doctorProfile: map (optional)
+//      - patientProfile: map (optional)
+//      - receptionistProfile: map (optional)
+//      - ownerProfile: map (optional)
+//      - staffProfile: map (optional)
+//      - deliveryProfile: map (optional)
+//
+// 2. Collection: /staffMembers/{staffId}
+//    Document ID: Staff ID (e.g. RIO-STF-014, RIO-DOC-02)
+//    Fields:
+//      - id: string (required, 1-50 chars, immutable on update)
+//      - name: string (required, 1-100 chars)
+//      - email: string (required, valid email, <= 100 chars)
+//      - phone: string (required, 5-25 chars)
+//      - role: string (required, enum: owner | doctor | receptionist | patient | staff | delivery)
+//      - department: string (required, 1-100 chars)
+//      - floor: number (required, 1-10)
+//      - shift: string (required, enum: morning | evening | night | general)
+//      - shiftTiming: string (required, 1-60 chars)
+//      - baseSalary: number (required, >= 0)
+//      - dailyWage: number (required, >= 0)
+//      - joiningDate: string (required, <= 50 chars)
+//      - faceRegistered: bool (required)
+//      - isActive: bool (required)
+//      - avatarUrl: string (optional, <= 1000 chars)
+//      - faceDescriptor: string (optional, <= 10000 chars)
+//      - generatedPassword: string (optional, <= 100 chars)
+//      - employeePin: string (optional, <= 20 chars)
+//
+// 3. Collection: /attendance/{attendanceId}
+//    Document ID: Attendance punch record ID (e.g. ATT-20261020-001)
+//    Fields:
+//      - id: string (required, 1-100 chars, immutable on update)
+//      - staffId: string (required, 1-50 chars, immutable on update)
+//      - staffName: string (required, 1-100 chars)
+//      - role: string (required, enum: owner | doctor | receptionist | patient | staff | delivery)
+//      - department: string (required, 1-100 chars)
+//      - floor: number (required, 1-10)
+//      - date: string (required, 1-20 chars)
+//      - lunchDurationMinutes: number (required, >= 0)
+//      - breakOverstayMinutes: number (required, >= 0)
+//      - status: string (required, enum: present | half_day | absent_unannounced | leave_approved | on_duty_delivery)
+//      - verifiedBy: string (required, enum: face_biometric | kiosk_scan | manual_owner_override)
+//      - floorCheckpoint: string (required, 1-150 chars)
+//      - shiftIn: string (optional, <= 50 chars)
+//      - lunchOut: string (optional, <= 50 chars)
+//      - lunchIn: string (optional, <= 50 chars)
+//      - shiftOut: string (optional, <= 50 chars)
+//      - photoSnapshotUri: string (optional, <= 2000 chars)
+//      - notes: string (optional, <= 1000 chars)
+//      - action: string (optional, <= 50 chars)
+//
+// 4. Collection: /payroll/{payrollId}
+//    Document ID: Monthly payroll record ID (e.g. PAY-202610-001)
+//    Fields:
+//      - id: string (required, 1-100 chars, immutable on update)
+//      - monthYear: string (required, 1-20 chars)
+//      - staffId: string (required, 1-50 chars, immutable on update)
+//      - staffName: string (required, 1-100 chars)
+//      - role: string (required, enum: owner | doctor | receptionist | patient | staff | delivery)
+//      - department: string (required, 1-100 chars)
+//      - baseSalary: number (required, >= 0)
+//      - dailyWage: number (required, >= 0)
+//      - workingDays: number (required, >= 0)
+//      - presentDays: number (required, >= 0)
+//      - halfDays: number (required, >= 0)
+//      - unannouncedLeaveDays: number (required, >= 0)
+//      - approvedLeaveDays: number (required, >= 0)
+//      - unannouncedLeaveDeductions: number (required, >= 0)
+//      - breakOverstayMinutesTotal: number (required, >= 0)
+//      - breakOverstayDeductions: number (required, >= 0)
+//      - lateArrivalDeductions: number (required, >= 0)
+//      - overtimeHours: number (required, >= 0)
+//      - overtimePay: number (required, >= 0)
+//      - incentives: number (required, >= 0)
+//      - grossEarnings: number (required, >= 0)
+//      - totalDeductions: number (required, >= 0)
+//      - netPayableSalary: number (required, >= 0)
+//      - paymentStatus: string (required, enum: draft | approved | paid)
+//      - paidAt: string (optional, <= 50 chars)
+//      - paymentReference: string (optional, <= 100 chars)
+//
+// 5. Collection: /deliveryOrders/{orderId}
+//    Document ID: Courier delivery order ID (e.g. DEL-RIO-2026-101)
+//    Fields:
+//      - id: string (required, 1-100 chars, immutable on update)
+//      - patientId: string (required, 1-100 chars)
+//      - patientName: string (required, 1-100 chars)
+//      - patientAge: number (required, 0-150)
+//      - patientGender: string (required, 1-20 chars)
+//      - scanType: string (required, 1-200 chars)
+//      - packageDetails: string (required, 1-500 chars)
+//      - sourceLocation: string (required, 1-200 chars)
+//      - sourcePhone: string (required, 5-30 chars)
+//      - destinationHospital: string (required, 1-200 chars)
+//      - destinationDoctor: string (required, 1-100 chars)
+//      - destinationPhone: string (required, 5-30 chars)
+//      - assignedCourierId: string (required, 1-100 chars)
+//      - assignedCourierName: string (required, 1-100 chars)
+//      - assignedCourierPhone: string (required, 5-30 chars)
+//      - priority: string (required, enum: urgent_stat | standard)
+//      - status: string (required, enum: pending_pickup | picked_up | in_transit | delivered | failed)
+//      - createdAt: string (required, <= 50 chars)
+//      - pickupTime: string (optional, <= 50 chars)
+//      - deliveredTime: string (optional, <= 50 chars)
+//      - estimatedDeliveryMinutes: number (optional, >= 0)
+//      - courierLocation: map (optional)
+//      - proofOfDelivery: map (optional)
+//
+// 6. Collection: /hospitals/{hospitalId}
+//    Document ID: Hospital ID (e.g. hosp_central)
+//    Public discovery for clinics & hospitals; owner-only write.
+//
+// 7. Collection: /appointments/{appointmentId}
+//    Document ID: Appointment ID (e.g. apt_001)
+//    Staff read all hospital appointments; patients read only their own appointments.
+//
+// 8. Collection: /queues/{queueId}
+//    Document ID: Real-time room queue ID (e.g. queue_hospital1_doc1_2026-09-25)
+//    Public read for waiting room monitors; doctor/receptionist/owner write.
+//
+// 9. Collection: /medicalReports/{reportId}
+//    Document ID: Scanned medical report ID (e.g. rep_xray_01)
+//    Doctor/receptionist/owner read & write; patients read only their own reports.
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Core Helper Functions & Authentication Primitives
+    // ===============================================================
+
+    // Check if the request is from an authenticated user
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if a user document exists in Firestore
+    function hasUserDoc() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // Fetch user profile data from Firestore
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Check if authenticated user matches a given staffId (either by direct UID or user profile link)
+    function isStaffOwnerOfDoc(staffIdField) {
+      return isAuthenticated() && (
+        request.auth.uid == staffIdField ||
+        (hasUserDoc() && 'staffId' in getUserData() && getUserData().staffId == staffIdField)
+      );
+    }
+
+    // Role check supporting Firebase custom claims and Firestore user documents
+    function userHasRole(targetRole) {
+      return isAuthenticated() && (
+        (request.auth.token.keys().hasAll(['role']) && request.auth.token.role == targetRole) ||
+        (hasUserDoc() && getUserData().role == targetRole)
+      );
+    }
+
+    // Hospital / Facility Owner or MD
+    function isOwner() {
+      return userHasRole('owner') || (
+        isAuthenticated() &&
+        request.auth.token.keys().hasAll(['email']) &&
+        request.auth.token.email.lower() in ['owner@rioscan.com', 'dr.preetha@rioscans.in']
+      );
+    }
+
+    // Doctor / Radiologist / Pathologist
+    function isDoctor() {
+      return userHasRole('doctor');
+    }
+
+    // Receptionist / Front Desk
+    function isReceptionist() {
+      return userHasRole('receptionist');
+    }
+
+    // Delivery Courier personnel
+    function isDelivery() {
+      return userHasRole('delivery');
+    }
+
+    // Clinic Staff (Owner, Doctors, Receptionists, Lab Technicians, Couriers)
+    function isStaff() {
+      return isAuthenticated() && (
+        (request.auth.token.keys().hasAll(['role']) && request.auth.token.role in ['owner', 'doctor', 'receptionist', 'staff', 'delivery']) ||
+        (hasUserDoc() && getUserData().role in ['owner', 'doctor', 'receptionist', 'staff', 'delivery']) ||
+        isOwner()
+      );
+    }
+
+    // Biometric Attendance Kiosk / Tablet
+    function isKiosk() {
+      return isAuthenticated() && (
+        (request.auth.token.keys().hasAll(['role']) && request.auth.token.role == 'kiosk') ||
+        (hasUserDoc() && getUserData().role == 'kiosk')
+      );
+    }
+
+    // Validate email format
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validator Functions (Enforced on CREATE and UPDATE)
+    // ===============================================================
+
+    // Validator for /users/{userId}
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'name', 'phone', 'role', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'email', 'name', 'phone', 'role', 'createdAt', 'hospitalId', 'avatarUrl', 'staffId', 'department', 'floor', 'doctorProfile', 'patientProfile', 'receptionistProfile', 'ownerProfile', 'staffProfile', 'deliveryProfile']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 &&
+        data.email is string && isValidEmail(data.email) && data.email.size() <= 100 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.phone is string && data.phone.size() >= 5 && data.phone.size() <= 25 &&
+        data.role in ['owner', 'doctor', 'receptionist', 'patient', 'staff', 'delivery'] &&
+        data.createdAt is string && data.createdAt.size() <= 50 &&
+        (!('hospitalId' in data) || (data.hospitalId is string && data.hospitalId.size() <= 100)) &&
+        (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 1000)) &&
+        (!('staffId' in data) || (data.staffId is string && data.staffId.size() <= 50)) &&
+        (!('department' in data) || (data.department is string && data.department.size() <= 100)) &&
+        (!('floor' in data) || (data.floor is number && data.floor >= 1 && data.floor <= 10)) &&
+        (!('doctorProfile' in data) || data.doctorProfile is map) &&
+        (!('patientProfile' in data) || data.patientProfile is map) &&
+        (!('receptionistProfile' in data) || data.receptionistProfile is map) &&
+        (!('ownerProfile' in data) || data.ownerProfile is map) &&
+        (!('staffProfile' in data) || data.staffProfile is map) &&
+        (!('deliveryProfile' in data) || data.deliveryProfile is map);
+    }
+
+    // Validator for /staffMembers/{staffId}
+    function isValidStaffMember(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'phone', 'role', 'department', 'floor', 'shift', 'shiftTiming', 'baseSalary', 'dailyWage', 'joiningDate', 'faceRegistered', 'isActive']) &&
+        data.keys().hasOnly(['id', 'name', 'email', 'phone', 'role', 'department', 'floor', 'shift', 'shiftTiming', 'baseSalary', 'dailyWage', 'joiningDate', 'avatarUrl', 'faceRegistered', 'faceDescriptor', 'isActive', 'generatedPassword', 'employeePin']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 50 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.email is string && isValidEmail(data.email) && data.email.size() <= 100 &&
+        data.phone is string && data.phone.size() >= 5 && data.phone.size() <= 25 &&
+        data.role in ['owner', 'doctor', 'receptionist', 'patient', 'staff', 'delivery'] &&
+        data.department is string && data.department.size() >= 1 && data.department.size() <= 100 &&
+        data.floor is number && data.floor >= 1 && data.floor <= 10 &&
+        data.shift in ['morning', 'evening', 'night', 'general'] &&
+        data.shiftTiming is string && data.shiftTiming.size() >= 1 && data.shiftTiming.size() <= 60 &&
+        data.baseSalary is number && data.baseSalary >= 0 &&
+        data.dailyWage is number && data.dailyWage >= 0 &&
+        data.joiningDate is string && data.joiningDate.size() <= 50 &&
+        data.faceRegistered is bool &&
+        data.isActive is bool &&
+        (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 1000)) &&
+        (!('faceDescriptor' in data) || (data.faceDescriptor is string && data.faceDescriptor.size() <= 10000)) &&
+        (!('generatedPassword' in data) || (data.generatedPassword is string && data.generatedPassword.size() <= 100)) &&
+        (!('employeePin' in data) || (data.employeePin is string && data.employeePin.size() <= 20));
+    }
+
+    // Validator for /attendance/{attendanceId}
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['id', 'staffId', 'staffName', 'role', 'department', 'floor', 'date', 'lunchDurationMinutes', 'breakOverstayMinutes', 'status', 'verifiedBy', 'floorCheckpoint']) &&
+        data.keys().hasOnly(['id', 'staffId', 'staffName', 'role', 'department', 'floor', 'date', 'shiftIn', 'lunchOut', 'lunchIn', 'shiftOut', 'lunchDurationMinutes', 'breakOverstayMinutes', 'status', 'verifiedBy', 'floorCheckpoint', 'photoSnapshotUri', 'notes', 'action']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.staffId is string && data.staffId.size() >= 1 && data.staffId.size() <= 50 &&
+        data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 100 &&
+        data.role in ['owner', 'doctor', 'receptionist', 'patient', 'staff', 'delivery'] &&
+        data.department is string && data.department.size() >= 1 && data.department.size() <= 100 &&
+        data.floor is number && data.floor >= 1 && data.floor <= 10 &&
+        data.date is string && data.date.size() >= 1 && data.date.size() <= 20 &&
+        data.lunchDurationMinutes is number && data.lunchDurationMinutes >= 0 &&
+        data.breakOverstayMinutes is number && data.breakOverstayMinutes >= 0 &&
+        data.status in ['present', 'half_day', 'absent_unannounced', 'leave_approved', 'on_duty_delivery'] &&
+        data.verifiedBy in ['face_biometric', 'kiosk_scan', 'manual_owner_override'] &&
+        data.floorCheckpoint is string && data.floorCheckpoint.size() >= 1 && data.floorCheckpoint.size() <= 150 &&
+        (!('shiftIn' in data) || (data.shiftIn is string && data.shiftIn.size() <= 50)) &&
+        (!('lunchOut' in data) || (data.lunchOut is string && data.lunchOut.size() <= 50)) &&
+        (!('lunchIn' in data) || (data.lunchIn is string && data.lunchIn.size() <= 50)) &&
+        (!('shiftOut' in data) || (data.shiftOut is string && data.shiftOut.size() <= 50)) &&
+        (!('photoSnapshotUri' in data) || (data.photoSnapshotUri is string && data.photoSnapshotUri.size() <= 2000)) &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+        (!('action' in data) || (data.action is string && data.action.size() <= 50));
+    }
+
+    // Validator for /payroll/{payrollId}
+    function isValidPayroll(data) {
+      return data.keys().hasAll(['id', 'monthYear', 'staffId', 'staffName', 'role', 'department', 'baseSalary', 'dailyWage', 'workingDays', 'presentDays', 'halfDays', 'unannouncedLeaveDays', 'approvedLeaveDays', 'unannouncedLeaveDeductions', 'breakOverstayMinutesTotal', 'breakOverstayDeductions', 'lateArrivalDeductions', 'overtimeHours', 'overtimePay', 'incentives', 'grossEarnings', 'totalDeductions', 'netPayableSalary', 'paymentStatus']) &&
+        data.keys().hasOnly(['id', 'monthYear', 'staffId', 'staffName', 'role', 'department', 'baseSalary', 'dailyWage', 'workingDays', 'presentDays', 'halfDays', 'unannouncedLeaveDays', 'approvedLeaveDays', 'unannouncedLeaveDeductions', 'breakOverstayMinutesTotal', 'breakOverstayDeductions', 'lateArrivalDeductions', 'overtimeHours', 'overtimePay', 'incentives', 'grossEarnings', 'totalDeductions', 'netPayableSalary', 'paymentStatus', 'paidAt', 'paymentReference']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.monthYear is string && data.monthYear.size() >= 1 && data.monthYear.size() <= 20 &&
+        data.staffId is string && data.staffId.size() >= 1 && data.staffId.size() <= 50 &&
+        data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 100 &&
+        data.role in ['owner', 'doctor', 'receptionist', 'patient', 'staff', 'delivery'] &&
+        data.department is string && data.department.size() >= 1 && data.department.size() <= 100 &&
+        data.baseSalary is number && data.baseSalary >= 0 &&
+        data.dailyWage is number && data.dailyWage >= 0 &&
+        data.workingDays is number && data.workingDays >= 0 &&
+        data.presentDays is number && data.presentDays >= 0 &&
+        data.halfDays is number && data.halfDays >= 0 &&
+        data.unannouncedLeaveDays is number && data.unannouncedLeaveDays >= 0 &&
+        data.approvedLeaveDays is number && data.approvedLeaveDays >= 0 &&
+        data.unannouncedLeaveDeductions is number && data.unannouncedLeaveDeductions >= 0 &&
+        data.breakOverstayMinutesTotal is number && data.breakOverstayMinutesTotal >= 0 &&
+        data.breakOverstayDeductions is number && data.breakOverstayDeductions >= 0 &&
+        data.lateArrivalDeductions is number && data.lateArrivalDeductions >= 0 &&
+        data.overtimeHours is number && data.overtimeHours >= 0 &&
+        data.overtimePay is number && data.overtimePay >= 0 &&
+        data.incentives is number && data.incentives >= 0 &&
+        data.grossEarnings is number && data.grossEarnings >= 0 &&
+        data.totalDeductions is number && data.totalDeductions >= 0 &&
+        data.netPayableSalary is number && data.netPayableSalary >= 0 &&
+        data.paymentStatus in ['draft', 'approved', 'paid'] &&
+        (!('paidAt' in data) || (data.paidAt is string && data.paidAt.size() <= 50)) &&
+        (!('paymentReference' in data) || (data.paymentReference is string && data.paymentReference.size() <= 100));
+    }
+
+    // Validator for /deliveryOrders/{orderId}
+    function isValidDeliveryOrder(data) {
+      return data.keys().hasAll(['id', 'patientId', 'patientName', 'patientAge', 'patientGender', 'scanType', 'packageDetails', 'sourceLocation', 'sourcePhone', 'destinationHospital', 'destinationDoctor', 'destinationPhone', 'assignedCourierId', 'assignedCourierName', 'assignedCourierPhone', 'priority', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'patientId', 'patientName', 'patientAge', 'patientGender', 'scanType', 'packageDetails', 'sourceLocation', 'sourcePhone', 'destinationHospital', 'destinationDoctor', 'destinationPhone', 'assignedCourierId', 'assignedCourierName', 'assignedCourierPhone', 'priority', 'status', 'createdAt', 'pickupTime', 'deliveredTime', 'estimatedDeliveryMinutes', 'courierLocation', 'proofOfDelivery']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.patientId is string && data.patientId.size() >= 1 && data.patientId.size() <= 100 &&
+        data.patientName is string && data.patientName.size() >= 1 && data.patientName.size() <= 100 &&
+        data.patientAge is number && data.patientAge >= 0 && data.patientAge <= 150 &&
+        data.patientGender is string && data.patientGender.size() >= 1 && data.patientGender.size() <= 20 &&
+        data.scanType is string && data.scanType.size() >= 1 && data.scanType.size() <= 200 &&
+        data.packageDetails is string && data.packageDetails.size() >= 1 && data.packageDetails.size() <= 500 &&
+        data.sourceLocation is string && data.sourceLocation.size() >= 1 && data.sourceLocation.size() <= 200 &&
+        data.sourcePhone is string && data.sourcePhone.size() >= 5 && data.sourcePhone.size() <= 30 &&
+        data.destinationHospital is string && data.destinationHospital.size() >= 1 && data.destinationHospital.size() <= 200 &&
+        data.destinationDoctor is string && data.destinationDoctor.size() >= 1 && data.destinationDoctor.size() <= 100 &&
+        data.destinationPhone is string && data.destinationPhone.size() >= 5 && data.destinationPhone.size() <= 30 &&
+        data.assignedCourierId is string && data.assignedCourierId.size() >= 1 && data.assignedCourierId.size() <= 100 &&
+        data.assignedCourierName is string && data.assignedCourierName.size() >= 1 && data.assignedCourierName.size() <= 100 &&
+        data.assignedCourierPhone is string && data.assignedCourierPhone.size() >= 5 && data.assignedCourierPhone.size() <= 30 &&
+        data.priority in ['urgent_stat', 'standard'] &&
+        data.status in ['pending_pickup', 'picked_up', 'in_transit', 'delivered', 'failed'] &&
+        data.createdAt is string && data.createdAt.size() <= 50 &&
+        (!('pickupTime' in data) || (data.pickupTime is string && data.pickupTime.size() <= 50)) &&
+        (!('deliveredTime' in data) || (data.deliveredTime is string && data.deliveredTime.size() <= 50)) &&
+        (!('estimatedDeliveryMinutes' in data) || (data.estimatedDeliveryMinutes is number && data.estimatedDeliveryMinutes >= 0)) &&
+        (!('courierLocation' in data) || data.courierLocation is map) &&
+        (!('proofOfDelivery' in data) || data.proofOfDelivery is map);
+    }
+
+    // Validator for /hospitals/{hospitalId}
+    function isValidHospital(data) {
+      return data.keys().hasAll(['id', 'name', 'tagline', 'address', 'city', 'latitude', 'longitude', 'phone', 'email', 'ownerId', 'departments', 'rating', 'reviewCount', 'openingHours', 'totalDoctors']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 150 &&
+        data.tagline is string && data.tagline.size() <= 200 &&
+        data.address is string && data.address.size() <= 300 &&
+        data.city is string && data.city.size() <= 100 &&
+        data.latitude is number &&
+        data.longitude is number &&
+        data.phone is string && data.phone.size() <= 30 &&
+        data.email is string && isValidEmail(data.email) && data.email.size() <= 100 &&
+        data.ownerId is string && data.ownerId.size() <= 100 &&
+        data.departments is list && data.departments.size() <= 50 &&
+        data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+        data.reviewCount is number && data.reviewCount >= 0 &&
+        data.openingHours is string && data.openingHours.size() <= 100 &&
+        data.totalDoctors is number && data.totalDoctors >= 0 &&
+        (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 2000)) &&
+        (!('distanceKm' in data) || data.distanceKm is number);
+    }
+
+    // Validator for /appointments/{appointmentId}
+    function isValidAppointment(data) {
+      return data.keys().hasAll(['id', 'tokenNumber', 'hospitalId', 'hospitalName', 'doctorId', 'doctorName', 'doctorSpecialty', 'roomNumber', 'patientId', 'patientName', 'patientPhone', 'patientAge', 'patientGender', 'appointmentDate', 'timeSlot', 'status', 'paymentStatus', 'paymentAmount']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.tokenNumber is number && data.tokenNumber >= 0 &&
+        data.hospitalId is string && data.hospitalId.size() <= 100 &&
+        data.hospitalName is string && data.hospitalName.size() <= 150 &&
+        data.doctorId is string && data.doctorId.size() <= 100 &&
+        data.doctorName is string && data.doctorName.size() <= 100 &&
+        data.doctorSpecialty is string && data.doctorSpecialty.size() <= 100 &&
+        data.roomNumber is string && data.roomNumber.size() <= 50 &&
+        data.patientId is string && data.patientId.size() <= 100 &&
+        data.patientName is string && data.patientName.size() <= 100 &&
+        data.patientPhone is string && data.patientPhone.size() <= 30 &&
+        data.patientAge is number && data.patientAge >= 0 && data.patientAge <= 150 &&
+        data.patientGender is string && data.patientGender.size() >= 1 && data.patientGender.size() <= 20 &&
+        data.appointmentDate is string && data.appointmentDate.size() <= 20 &&
+        data.timeSlot is string && data.timeSlot.size() <= 30 &&
+        data.status in ['booked', 'checked_in', 'waiting', 'in_consultation', 'completed', 'cancelled', 'no_show'] &&
+        data.paymentStatus in ['pending', 'paid', 'waived'] &&
+        data.paymentAmount is number && data.paymentAmount >= 0 &&
+        (!('paymentMethod' in data) || data.paymentMethod in ['cash', 'card', 'upi', 'gpay']) &&
+        (!('paidAt' in data) || (data.paidAt is string && data.paidAt.size() <= 50)) &&
+        (!('receiptNumber' in data) || (data.receiptNumber is string && data.receiptNumber.size() <= 50)) &&
+        (!('symptoms' in data) || (data.symptoms is string && data.symptoms.size() <= 2000)) &&
+        (!('consultationNotes' in data) || (data.consultationNotes is string && data.consultationNotes.size() <= 5000)) &&
+        (!('prescription' in data) || data.prescription is map) &&
+        (!('scannedReports' in data) || (data.scannedReports is list && data.scannedReports.size() <= 50)) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50)) &&
+        (!('estimatedWaitMinutes' in data) || (data.estimatedWaitMinutes is number && data.estimatedWaitMinutes >= 0));
+    }
+
+    // Validator for /queues/{queueId}
+    function isValidQueue(data) {
+      return data.keys().hasAll(['id', 'hospitalId', 'hospitalName', 'doctorId', 'doctorName', 'roomNumber', 'specialty', 'date', 'currentToken', 'nextToken', 'totalWaiting', 'totalCompleted', 'status', 'lastCalledAt', 'upcomingTokens']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.hospitalId is string && data.hospitalId.size() <= 100 &&
+        data.hospitalName is string && data.hospitalName.size() <= 150 &&
+        data.doctorId is string && data.doctorId.size() <= 100 &&
+        data.doctorName is string && data.doctorName.size() <= 100 &&
+        data.roomNumber is string && data.roomNumber.size() <= 50 &&
+        data.specialty is string && data.specialty.size() <= 100 &&
+        data.date is string && data.date.size() <= 20 &&
+        data.currentToken is number && data.currentToken >= 0 &&
+        data.nextToken is number && data.nextToken >= 0 &&
+        data.totalWaiting is number && data.totalWaiting >= 0 &&
+        data.totalCompleted is number && data.totalCompleted >= 0 &&
+        data.status in ['active', 'on_break', 'completed'] &&
+        data.lastCalledAt is string && data.lastCalledAt.size() <= 50 &&
+        data.upcomingTokens is list && data.upcomingTokens.size() <= 100;
+    }
+
+    // Validator for /medicalReports/{reportId}
+    function isValidMedicalReport(data) {
+      return data.keys().hasAll(['id', 'appointmentId', 'patientId', 'patientName', 'reportType', 'title', 'fileUri', 'scannedBy', 'scanDate', 'filterApplied']) &&
+        data.keys().hasOnly(['id', 'appointmentId', 'patientId', 'patientName', 'reportType', 'title', 'fileUri', 'notes', 'scannedBy', 'scanDate', 'filterApplied', 'fileSize']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
+        data.appointmentId is string && data.appointmentId.size() <= 100 &&
+        data.patientId is string && data.patientId.size() <= 100 &&
+        data.patientName is string && data.patientName.size() <= 100 &&
+        data.reportType in ['xray', 'blood_test', 'mri', 'ct_scan', 'ultrasound', 'ecg', 'pathology', 'prescription', 'other'] &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.fileUri is string && data.fileUri.size() >= 1 && data.fileUri.size() <= 500000 &&
+        data.scannedBy is string && data.scannedBy.size() <= 100 &&
+        data.scanDate is string && data.scanDate.size() <= 50 &&
+        data.filterApplied in ['original', 'xray_contrast', 'document_bw', 'color_enhanced'] &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+        (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 50));
+    }
+
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // 1. Users collection:
+    // - Authenticated users can read their own profile (strictly avoiding blanket read/PII leak).
+    // - Master account ('owner') can read and write all users (create doctor, receptionist, staff, delivery logins).
+    // - Non-owner user can only update their own non-role profile fields.
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isOwner());
+
+      allow create: if isAuthenticated() &&
+        isValidUser(request.resource.data) &&
+        request.resource.data.id == userId &&
+        (
+          isOwner() ||
+          (request.auth.uid == userId && request.resource.data.role == 'patient')
+        );
+
+      allow update: if isAuthenticated() &&
+        isValidUser(request.resource.data) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        (
+          isOwner() ||
+          (request.auth.uid == userId && request.resource.data.role == resource.data.role)
+        );
+
+      allow delete: if isOwner();
+    }
+
+    // 2. Staff Members collection:
+    // - 'owner' can create, read, update, delete all staff members and their salary/credentials info.
+    // - Staff/Doctors/Receptionists can read their own staff record.
+    match /staffMembers/{staffId} {
+      allow read: if isOwner() ||
+        isStaffOwnerOfDoc(staffId) ||
+        (isAuthenticated() && request.auth.token.keys().hasAll(['email']) && resource.data.email == request.auth.token.email);
+
+      allow create: if isOwner() &&
+        isValidStaffMember(request.resource.data) &&
+        request.resource.data.id == staffId;
+
+      allow update: if isOwner() &&
+        isValidStaffMember(request.resource.data) &&
+        request.resource.data.id == resource.data.id;
+
+      allow delete: if isOwner();
+    }
+
+    // 3. Attendance collection:
+    // - 'owner' has full read/write access.
+    // - Any authenticated staff or kiosk can create attendance punches (SHIFT_IN, LUNCH_OUT, LUNCH_IN, SHIFT_OUT).
+    // - Staff can read their own attendance records.
+    match /attendance/{attendanceId} {
+      allow read: if isOwner() || isStaffOwnerOfDoc(resource.data.staffId);
+
+      allow create: if (isOwner() || isStaff() || isKiosk()) &&
+        isValidAttendance(request.resource.data) &&
+        request.resource.data.id == attendanceId;
+
+      allow update: if (
+          isOwner() ||
+          ((isStaff() || isKiosk()) && isStaffOwnerOfDoc(resource.data.staffId))
+        ) &&
+        isValidAttendance(request.resource.data) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.staffId == resource.data.staffId;
+
+      allow delete: if isOwner();
+    }
+
+    // 4. Payroll collection:
+    // - 'owner' has full read/write access for calculating salary, deductions, and approving payouts.
+    // - Staff can read their own approved payslips.
+    match /payroll/{payrollId} {
+      allow read: if isOwner() || (
+        isAuthenticated() &&
+        resource.data.paymentStatus in ['approved', 'paid'] &&
+        isStaffOwnerOfDoc(resource.data.staffId)
+      );
+
+      allow create: if isOwner() &&
+        isValidPayroll(request.resource.data) &&
+        request.resource.data.id == payrollId;
+
+      allow update: if isOwner() &&
+        isValidPayroll(request.resource.data) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.staffId == resource.data.staffId;
+
+      allow delete: if isOwner();
+    }
+
+    // 5. Delivery Orders collection:
+    // - 'owner', 'receptionist', and assigned 'delivery' personnel can read and update.
+    // - Receptionist/Owner can create orders.
+    // - Delivery person can update delivery status and upload GPS/proof of delivery.
+    match /deliveryOrders/{orderId} {
+      allow read: if isOwner() ||
+        isReceptionist() ||
+        (isDelivery() && isStaffOwnerOfDoc(resource.data.assignedCourierId));
+
+      allow create: if (isOwner() || isReceptionist()) &&
+        isValidDeliveryOrder(request.resource.data) &&
+        request.resource.data.id == orderId;
+
+      allow update: if isValidDeliveryOrder(request.resource.data) &&
+        request.resource.data.id == resource.data.id &&
+        (
+          isOwner() ||
+          isReceptionist() ||
+          (
+            isDelivery() &&
+            isStaffOwnerOfDoc(resource.data.assignedCourierId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'courierLocation',
+              'proofOfDelivery',
+              'pickupTime',
+              'deliveredTime',
+              'estimatedDeliveryMinutes'
+            ])
+          )
+        );
+
+      allow delete: if isOwner();
+    }
+
+    // 6. Hospitals collection:
+    // - Public read so patients can discover nearby hospitals and departments.
+    // - Hospital Owner can create, update, delete.
+    match /hospitals/{hospitalId} {
+      allow read: if true;
+
+      allow create: if isOwner() &&
+        isValidHospital(request.resource.data) &&
+        request.resource.data.id == hospitalId;
+
+      allow update: if isOwner() &&
+        isValidHospital(request.resource.data) &&
+        request.resource.data.id == resource.data.id;
+
+      allow delete: if isOwner();
+
+      // Hospital departments subcollection
+      match /departments/{departmentId} {
+        allow read: if true;
+        allow write: if isOwner();
+      }
+    }
+
+    // 7. Appointments & Tokens collection:
+    // - Staff (Owner, Doctors, Receptionists) can read all hospital appointments.
+    // - Patients can read only their own appointments (PII protection).
+    // - Receptionists can book walk-ins; patients can book their own appointments.
+    // - Doctors/Receptionists/Owner can update status, notes, payments; patients can cancel.
+    match /appointments/{appointmentId} {
+      allow read: if isStaff() ||
+        (isAuthenticated() && resource.data.patientId == request.auth.uid);
+
+      allow create: if isAuthenticated() &&
+        isValidAppointment(request.resource.data) &&
+        request.resource.data.id == appointmentId &&
+        (
+          isStaff() ||
+          request.resource.data.patientId == request.auth.uid
+        );
+
+      allow update: if isAuthenticated() &&
+        isValidAppointment(request.resource.data) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.patientId == resource.data.patientId &&
+        (
+          isStaff() ||
+          (
+            request.auth.uid == resource.data.patientId &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'symptoms',
+              'appointmentDate',
+              'timeSlot'
+            ])
+          )
+        );
+
+      allow delete: if isOwner() || isReceptionist();
+    }
+
+    // 8. Doctor Queues collection:
+    // - Public read so the outside waiting room monitor web app can display queue status without requiring doctor login.
+    // - Doctor, Receptionist, and Owner can manage queue status.
+    match /queues/{queueId} {
+      allow read: if true;
+
+      allow create: if isAuthenticated() &&
+        (isDoctor() || isReceptionist() || isOwner()) &&
+        isValidQueue(request.resource.data) &&
+        request.resource.data.id == queueId;
+
+      allow update: if isAuthenticated() &&
+        (isDoctor() || isReceptionist() || isOwner()) &&
+        isValidQueue(request.resource.data) &&
+        request.resource.data.id == resource.data.id;
+
+      allow delete: if isOwner() || isReceptionist();
+    }
+
+    // 9. Scanned Medical Reports collection:
+    // - Doctors, Receptionists, and Owner can read all medical reports.
+    // - Specific patient can only read their own reports (PII & HIPAA protection).
+    // - Receptionists and Doctors can create/upload reports.
+    match /medicalReports/{reportId} {
+      allow read: if isAuthenticated() &&
+        (
+          isDoctor() ||
+          isReceptionist() ||
+          isOwner() ||
+          resource.data.patientId == request.auth.uid
+        );
+
+      allow create: if isAuthenticated() &&
+        (isReceptionist() || isDoctor() || isOwner()) &&
+        isValidMedicalReport(request.resource.data) &&
+        request.resource.data.id == reportId;
+
+      allow update: if isAuthenticated() &&
+        (isReceptionist() || isDoctor() || isOwner()) &&
+        isValidMedicalReport(request.resource.data) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.patientId == resource.data.patientId;
+
+      allow delete: if isOwner() || isDoctor() || isReceptionist();
+    }
+  }
+}

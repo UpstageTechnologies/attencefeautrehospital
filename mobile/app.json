@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Upstage Health",
+    "slug": "upstage-health",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#064E3B"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.niruban.upstagehealth",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Upstage Health requires camera access to scan medical reports, X-rays, and pathology documents.",
+        "NSLocationWhenInUseUsageDescription": "Upstage Health uses your location to discover nearby registered hospitals and estimate travel distance."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#064E3B"
+      },
+      "package": "com.upstagehealth.app",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

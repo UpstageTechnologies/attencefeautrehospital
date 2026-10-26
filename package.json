@@ -1,0 +1,25 @@
+{
+  "name": "upstage-health",
+  "version": "1.0.0",
+  "description": "Hospital appointment management system with multi-role logins, embedded document scanner, iOS Glass UI, WhatsApp UX, and waiting room monitor display.",
+  "scripts": {
+    "mobile:start": "cd mobile && npm start",
+    "mobile:ios": "cd mobile && npm run ios",
+    "mobile:android": "cd mobile && npm run android",
+    "mobile:web": "cd mobile && npm run web",
+    "monitor:dev": "cd web-monitor && npm run dev",
+    "monitor:build": "cd web-monitor && npm run build"
+  },
+  "keywords": [
+    "hospital",
+    "doctor-appointment",
+    "react-native",
+    "ios-glass-ui",
+    "whatsapp-ui",
+    "firebase",
+    "document-scanner",
+    "queue-monitor"
+  ],
+  "author": "Upstage Health Engineering",
+  "license": "MIT"
+}
